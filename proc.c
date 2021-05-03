@@ -697,12 +697,18 @@ sys_info(void)
   {
     int npages = 0;   
     npages = p->sz;    //pointer to next available address in memory for current process. p = current process 
-    npages = npages / 4096 ; 
-    return npages;
+    if (npages % 4096 == 0)
+    {
+	npages = npages / 4096 ; 
+    }
+    else
+    {
+	npages = (npages / 4096) + 1;    
   }
- return 1;
+ return npages;
 }
-
+return -1;
+}
 
 // This function sets the number of tickets for the current process based on the argument passed in. i.e 30,20,10. This also handles setting the stride algorithm variables.
 int 
