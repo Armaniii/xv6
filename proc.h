@@ -8,6 +8,8 @@ struct cpu {
   int ncli;                    // Depth of pushcli nesting.
   int intena;                  // Were interrupts enabled before pushcli?
   struct proc *proc;           // The process running on this cpu or null
+
+  //struct context *scheduler1;
 };
 
 extern struct cpu cpus[NCPU];
@@ -48,7 +50,17 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
-  char name[16];               // Process name (debugging)
+  char name[16];               // Process name (debugging) 
+  int n_proc;
+  int n_syscall;
+  //lottery
+  int tickets;			// added by airan002
+  int ticks; 			// added by airan002
+  
+  //stride
+  int pass;
+  int stride;
+  
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -56,3 +68,5 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+

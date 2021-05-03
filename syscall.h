@@ -20,3 +20,6 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+#define SYS_info   22
+#define SYS_settix 23
+#define SYS_gettix 24

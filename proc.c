@@ -6,7 +6,13 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "rand.h"
+// ran num source from "C Porogram to implement linear congruential gen for pseudo Ran Num Gen"
+#define RAND_MAX_32 ((1U << 31) - 1)
+int rseed = 0;
 
+
+const int stride1 = (1 << 20); //per stride scheduling paper
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -20,10 +26,17 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
+//ran num gen from source
+int rand() 
+{
+  return (rseed = (rseed * 214013 + 2531011) & RAND_MAX_32) >> 16;
+}
+
 void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+//  sgenrand(unixtime());
 }
 
 // Must be called with interrupts disabled
@@ -70,6 +83,7 @@ myproc(void) {
 // If found, change state to EMBRYO and initialize
 // state required to run in the kernel.
 // Otherwise return 0.
+//Stride changing param to int from void
 static struct proc*
 allocproc(void)
 {
@@ -88,7 +102,8 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-
+  
+  p->tickets = 10;
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -111,7 +126,8 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
-
+  p->n_proc++;
+  
   return p;
 }
 
@@ -183,14 +199,15 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
-
+   
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+ if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0)
+ {  
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
@@ -220,6 +237,8 @@ fork(void)
 
   return pid;
 }
+
+
 
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
@@ -319,41 +338,150 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
+//void
+//scheduler(void)
+//{
+//  struct proc *p;
+//  struct cpu *c = mycpu();
+//  c->proc = 0;
+  
+//  for(;;){
+    // Enable interrupts on this processor.
+//    sti();
+
+    // Loop over process table looking for process to run.
+//    acquire(&ptable.lock);
+//    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+//      if(p->state != RUNNABLE)
+//        continue;
+
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+//      c->proc = p;
+//      switchuvm(p);
+//      p->state = RUNNING;
+
+      //swtch(&(c->lot_scheduler), p->context);
+//      swtch(&(c->stride_scheduler), p->context);
+//      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+//      c->proc = 0;
+//    }
+//    release(&ptable.lock);
+
+//   }
+//}
+
+//Lottery Scheduler
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+  int totalTix = 0;
+  long winTix = 0;
+  int counter = 0;
   for(;;){
     // Enable interrupts on this processor.
-    sti();
-
-    // Loop over process table looking for process to run.
+    sti(); 
+   // Loop over process table counting the total number of tickets.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      if(p->state == RUNNABLE)
+      {       
+         totalTix += p->tickets;	// Increment total tickets
+      }           
+    }
+    winTix=rand(totalTix);		// Find the winning ticket using random number generator
+    counter = 0;			//Restart Counter
+    for(p = ptable.proc; p< &ptable.proc[NPROC]; p++)
+    {
       if(p->state != RUNNABLE)
+      { 
+	continue;
+      }
+      counter += p->tickets;
+   
+      if(counter < winTix)
+      {  
         continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
+      }
+      // Switch to chosen process.
       c->proc = p;
+      p->ticks++;
       switchuvm(p);
       p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
+      swtch(&c->scheduler, p->context);
       switchkvm();
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
+      // process is done running for now
       c->proc = 0;
+      break;	//exit we found the winning proc
     }
-    release(&ptable.lock);
-
-  }
+    release(&ptable.lock); 
+  } 
 }
+
+
+//Stride Scheduler
+//void 
+//scheduler(void)
+//{
+//  struct proc *p;
+//  struct cpu *c = mycpu();
+//  c->proc = 0;
+//  float min_pass_val;
+//  struct proc *min_p = myproc();   
+//  for (;;) 
+//  {
+    // Enables interrupts on this processor
+//    sti();
+    // Get the lock 
+//    acquire(&ptable.lock);
+//    min_pass_val = 1000000000; 
+//    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) 
+//    {
+//      if (p->state != RUNNABLE)
+//      {
+//   	continue;
+//    }
+//    if (p->stride < min_pass_val || min_pass_val < 0)
+//    {
+//      min_pass_val = p->stride;		// finding proc with minimum pass value
+//	min_p = p;				// setting min proc to the proc we just found
+//    }
+//  }
+//   for(p = ptable.proc;p < &ptable.proc[NPROC];p++)
+//   {  
+      // Only select that which has a stride equal to min pass value. Thats how we know its the minimum we just found. We also make sure its runnable
+//      if(p->stride != min_pass_val || p->state != RUNNABLE)
+//      {
+//	continue;
+//      }
+//      c->proc = min_p;	
+//     min_p->stride += min_p->pass;	// Advance pass by stride	
+//      min_p->ticks++; 
+//      switchuvm(min_p);
+//      min_p->state = RUNNING;
+//      swtch(&(c->scheduler),min_p->context);
+//      switchkvm();
+//      c->proc = 0;
+//      break;       
+//   }
+//   release(&ptable.lock);
+// } 
+//}
+
+
+
+
+
+
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
@@ -377,7 +505,7 @@ sched(void)
   if(readeflags()&FL_IF)
     panic("sched interruptible");
   intena = mycpu()->intena;
-  swtch(&p->context, mycpu()->scheduler);
+  swtch(&p->context, mycpu()->scheduler);	// deals with the scheduler
   mycpu()->intena = intena;
 }
 
@@ -531,4 +659,75 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+int
+sys_info(void)
+{
+  int param;
+  argint(0,&param);
+  struct proc *p = myproc();  // current process, p initialization
+
+  if(param==1)
+  { 
+    int proc_count = 0;
+
+    acquire(&ptable.lock);
+
+    for(p = ptable.proc; p< &ptable.proc[NPROC]; p++)
+    {
+      if(p->state != ZOMBIE)
+      {
+	proc_count++;
+      }
+    }
+    release(&ptable.lock);
+
+    return proc_count;
+  }
+  
+  // Returns n_syscall which is part of struct proc that holds the number of system calls the current process has made. This variable is incremented in syscall.c 
+  if(param==2)
+  {
+    return p->n_syscall;
+  }
+  
+  // Returns the number of pages the current process is using
+  if(param == 3)
+  {
+    int npages = 0;   
+    npages = p->sz;    //pointer to next available address in memory for current process. p = current process 
+    npages = npages / 4096 ; 
+    return npages;
+  }
+ return 1;
+}
+
+
+// This function sets the number of tickets for the current process based on the argument passed in. i.e 30,20,10. This also handles setting the stride algorithm variables.
+int 
+sys_settix(void)
+{
+  int num;
+  argint(0,&num);
+  struct proc *p = myproc();
+  acquire(&ptable.lock);
+  // lot + stride
+  p->tickets = num;
+  p->ticks = 0;
+  //stride 
+  p->pass = stride1/(p->tickets);
+  p->stride = 0;
+
+
+  release(&ptable.lock);
+  return p->tickets;
+}
+
+// This function returns the number of ticks, i.e the number of time the current process was scheduled to run for. 
+int 
+sys_gettix(void)
+{
+  struct proc *p = myproc();
+  return (p->ticks);
 }

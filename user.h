@@ -23,7 +23,9 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
-
+int info(int);		//added by airan002
+int settix(int);	//added by airan002
+int gettix(void);	//added by airan002
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);
